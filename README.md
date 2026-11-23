@@ -1,5 +1,6 @@
 # 🌱 Assistant agricole intelligent (VLM + RAG)
 
+3
 Un, « ChatGPT de l'agriculteur » : l'agriculteur envoie une photo et pose une question en français ou en arabe. L'application analyse les images et fournit des conseils agricoles fiables, basés sur des documents et des sources.
 
 ## 🏗️ Structure du projet
