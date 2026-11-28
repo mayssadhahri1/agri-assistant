@@ -2,12 +2,14 @@
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import User
-from ..schemas import StatutCompte, UserOut
+from ..models import Conversation, Feedback, Message, Parcelle, Photo, User
+from ..schemas import (
+    StatsAdmin, StatsComptes, StatsParcelles, StatsPhotos, StatsQuestions, StatsSatisfaction, StatutCompte, UserOut,
+)
 from ..security import require_roles
 from ..services.emails import notifier_client_decision
 
@@ -75,3 +77,43 @@ def refuser_compte(user_id: int, taches: BackgroundTasks, db: Session = Depends(
     """Refuse le compte : la connexion est bloquée (un token déjà donné ne marche plus)."""
     return _decider(db, admin, user_id, "refuse", taches)
 
+
+def _compter_par(db: Session, colonne, *conditions) -> dict[str, int]:
+    """{valeur: nombre} pour une colonne, ex. {'olivier': 3, 'tomate': 1}."""
+    requete = select(colonne, func.count()).where(*conditions).group_by(colonne)
+    return {str(v): n for v, n in db.execute(requete).all() if v is not None}
+
+
+def _pourcentage(part: int, total: int) -> float | None:
+    return round(100 * part / total, 1) if total else None
+
+
+@router.get("/stats", response_model=StatsAdmin)
+def statistiques(db: Session = Depends(get_db), admin: User = Depends(admin_requis)):
+    """Tableau de bord : comptes, parcelles, questions, qualité des photos, satisfaction."""
+    nb_questions = db.scalar(select(func.count()).select_from(Message).where(Message.role == "user"))
+    nb_reponses = db.scalar(select(func.count()).select_from(Message).where(Message.role == "assistant"))
+    nb_photos = db.scalar(select(func.count()).select_from(Photo))
+    nb_mauvaises = db.scalar(select(func.count()).select_from(Photo).where(Photo.qualite_ok.is_(False)))
+    nb_avis = db.scalar(select(func.count()).select_from(Feedback))
+    nb_utiles = db.scalar(select(func.count()).select_from(Feedback).where(Feedback.utile.is_(True)))
+    return StatsAdmin(
+        comptes=StatsComptes(
+            total=db.scalar(select(func.count()).select_from(User)),
+            par_statut=_compter_par(db, User.statut),
+            par_role=_compter_par(db, User.role),
+        ),
+        parcelles=StatsParcelles(
+            total=db.scalar(select(func.count()).select_from(Parcelle)),
+            par_culture=_compter_par(db, Parcelle.culture),
+        ),
+        conversations=db.scalar(select(func.count()).select_from(Conversation)),
+        questions=StatsQuestions(
+            total=nb_questions,
+            par_langue=_compter_par(db, Message.langue, Message.role == "user"),
+            reponses_assistant=nb_reponses,
+        ),
+        photos=StatsPhotos(total=nb_photos, a_reprendre=nb_mauvaises,
+                           taux_qualite_ok=_pourcentage(nb_photos - nb_mauvaises, nb_photos)),
+        satisfaction=StatsSatisfaction(nb_avis=nb_avis, taux_utile=_pourcentage(nb_utiles, nb_avis)),
+    )

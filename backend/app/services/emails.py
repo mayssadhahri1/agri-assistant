@@ -192,3 +192,24 @@ def notifier_client_decision(user_id: int) -> None:
         else:
             return
         envoyer_email(user.email, titre, _gabarit(titre, contenu))
+
+
+def envoyer_reinitialisation(user_id: int, base_url: str) -> None:
+    """Tâche de fond : email avec le bouton « Choisir un nouveau mot de passe » (valable 1 h)."""
+    from ..security import RESET_MINUTES, create_reset_token   # import ici : évite un import circulaire
+
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if user is None or not user.email:
+            return
+        lien = f"{base_url.rstrip('/')}/comptes/mot-de-passe?token={create_reset_token(user)}"
+        contenu = (
+            f"<p>Bonjour {html.escape(user.nom)},</p>"
+            "<p>Vous avez demandé à changer votre mot de passe.</p>"
+            + _bouton("Choisir un nouveau mot de passe", lien, "#2f6b2f")
+            + f'<p style="color:#6b7768;font-size:12px;margin-top:18px">Ce lien est valable {RESET_MINUTES} minutes '
+            "et ne marche qu'une fois. Si vous n'avez rien demandé, ignorez cet email : "
+            "votre mot de passe actuel reste valable.</p>"
+        )
+        envoyer_email(user.email, "Réinitialisation de votre mot de passe",
+                      _gabarit("Mot de passe oublié", contenu))

@@ -6,9 +6,12 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from ..schemas import InscriptionOut, LoginJSON, Token, UserCreate, UserOut, normaliser_telephone
-from ..security import create_access_token, get_current_user, hash_password, verify_password
-from ..services.emails import notifier_admins_inscription
+from ..schemas import (
+    ChangementMotDePasse, InscriptionOut, LoginJSON, MessageInfo, MotDePasseOublie, ProfilUpdate,
+    ReinitialisationMotDePasse, Token, UserCreate, UserOut, normaliser_telephone,
+)
+from ..security import create_access_token, get_current_user, hash_password, lire_reset_token, verify_password
+from ..services.emails import envoyer_reinitialisation, notifier_admins_inscription
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 
@@ -100,3 +103,63 @@ def login_json(data: LoginJSON, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.patch("/me", response_model=UserOut)
+def modifier_profil(data: ProfilUpdate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    """Modifier son nom, son téléphone ou sa langue (seuls les champs envoyés changent)."""
+    champs = data.model_dump(exclude_unset=True)
+    if not champs:
+        raise HTTPException(status_code=422, detail="Aucun champ à modifier")
+    if "nom" in champs and champs["nom"] is None:
+        raise HTTPException(status_code=422, detail="Le nom ne peut pas être vide")
+    if "langue" in champs and champs["langue"] is None:
+        raise HTTPException(status_code=422, detail="La langue ne peut pas être vide")
+    if "telephone" in champs:
+        tel = champs["telephone"]
+        if tel is None and not current_user.email:
+            raise HTTPException(status_code=422, detail="Gardez au moins un email ou un téléphone")
+        if tel and db.scalar(select(User).where(User.telephone == tel, User.id != current_user.id)):
+            raise HTTPException(status_code=409, detail="Ce téléphone est déjà utilisé")
+    for champ, valeur in champs.items():
+        setattr(current_user, champ, valeur)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/mot-de-passe", response_model=MessageInfo)
+def changer_mot_de_passe(data: ChangementMotDePasse, db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_user)):
+    """Changer son mot de passe (il faut donner l'ancien)."""
+    if not verify_password(data.ancien_mot_de_passe, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Ancien mot de passe incorrect")
+    if data.ancien_mot_de_passe == data.nouveau_mot_de_passe:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit être différent de l'ancien")
+    current_user.password_hash = hash_password(data.nouveau_mot_de_passe)
+    db.commit()
+    return MessageInfo(message="Mot de passe modifié")
+
+
+MESSAGE_OUBLI = "Si un compte validé existe avec cet email, un lien de réinitialisation vient d'être envoyé."
+
+
+@router.post("/mot-de-passe-oublie", response_model=MessageInfo, status_code=202)
+def mot_de_passe_oublie(data: MotDePasseOublie, request: Request, taches: BackgroundTasks,
+                        db: Session = Depends(get_db)):
+    """Envoie un email avec un lien valable 1 h. La réponse est toujours la même,
+    pour ne pas révéler si un email est inscrit ou non."""
+    user = db.scalar(select(User).where(User.email == data.email.lower()))
+    if user and user.statut == "valide" and user.actif:
+        taches.add_task(envoyer_reinitialisation, user.id, str(request.base_url))
+    return MessageInfo(message=MESSAGE_OUBLI)
+
+
+@router.post("/reinitialiser-mot-de-passe", response_model=MessageInfo)
+def reinitialiser_mot_de_passe(data: ReinitialisationMotDePasse, db: Session = Depends(get_db)):
+    """Version API (application mobile) : le token vient du lien reçu par email."""
+    user = lire_reset_token(data.token, db)
+    user.password_hash = hash_password(data.nouveau_mot_de_passe)
+    db.commit()
+    return MessageInfo(message="Mot de passe modifié, vous pouvez vous connecter")

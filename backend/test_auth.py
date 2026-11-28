@@ -63,11 +63,11 @@ pwd = "motdepasse1"
 print(f"Serveur : {BASE}\n")
 
 try:
-    s, _ = call("GET", "/")
+    s, _ = call("GET", "/health")
 except Exception as e:
     print(f"Impossible de joindre le serveur : {e}\nLancez d'abord : python -m uvicorn app.main:app --reload")
     sys.exit(2)
-check("Serveur démarré (GET /)", s, 200)
+check("Serveur démarré (GET /health)", s, 200)
 
 # --- inscription ---
 s, user = call("POST", "/auth/register", {"nom": "Ali Test", "email": email, "telephone": tel_saisi,

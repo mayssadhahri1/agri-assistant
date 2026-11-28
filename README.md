@@ -469,3 +469,20 @@ Le script ajoute les nouvelles colonnes (les anciens comptes restent « valide �
 ### Autres corrections
 - `database/schema.sql` : colonne `statut` ajoutée.
 - Tests automatiques : `python test_auth.py` (31 tests) et `python test_api.py`.
+
+## Étape 5 — Profil, mot de passe et statistiques admin
+
+| Méthode | URL | Description |
+|---|---|---|
+| PATCH | /auth/me | Modifier son nom, son téléphone ou sa langue |
+| POST | /auth/me/mot-de-passe | Changer son mot de passe (ancien + nouveau) |
+| POST | /auth/mot-de-passe-oublie | Envoie un lien par email (valable 1 h, usage unique) |
+| POST | /auth/reinitialiser-mot-de-passe | Nouveau mot de passe avec le token du lien (appli mobile) |
+| GET/POST | /comptes/mot-de-passe | Page web ouverte depuis l'email |
+| GET | /admin/stats | Statistiques : comptes, parcelles, questions, photos, satisfaction (admin) |
+
+- La réponse de « mot de passe oublié » est toujours la même : on ne révèle pas si un email est inscrit.
+- Routes RAG protégées : `/rag/index`, `/rag/index-all`, `/rag/stats` réservées à l'admin et à l'expert ;
+  `/rag/search` demande d'être connecté.
+- Tests : `python test_etape5.py` (21 tests).
+

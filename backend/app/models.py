@@ -89,3 +89,16 @@ class Photo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     message: Mapped[Message] = relationship(back_populates="photos")
+
+
+class Feedback(Base):
+    """F7 : avis de l'agriculteur sur une réponse (table feedbacks)."""
+
+    __tablename__ = "feedbacks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    utile: Mapped[bool] = mapped_column(Boolean)
+    commentaire: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -33,6 +33,34 @@ def create_access_token(user: User) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+RESET_TYPE = "reset_mot_de_passe"
+RESET_MINUTES = 60
+
+
+def create_reset_token(user: User) -> str:
+    """Lien « mot de passe oublié » valable 1 h. Il contient un bout du hash actuel :
+    dès que le mot de passe change, l'ancien lien ne marche plus (usage unique)."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=RESET_MINUTES)
+    payload = {"type": RESET_TYPE, "sub": str(user.id), "h": user.password_hash[-12:], "exp": expire}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def lire_reset_token(token: str, db: Session) -> User:
+    """Renvoie l'utilisateur du lien, ou lève une HTTPException claire."""
+    try:
+        data = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Ce lien a expiré : refaites une demande")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=400, detail="Lien invalide")
+    if data.get("type") != RESET_TYPE:
+        raise HTTPException(status_code=400, detail="Lien invalide")
+    user = db.get(User, int(data["sub"]))
+    if user is None or user.password_hash[-12:] != data.get("h"):
+        raise HTTPException(status_code=400, detail="Ce lien a déjà été utilisé")
+    return user
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:

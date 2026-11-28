@@ -19,6 +19,28 @@ def normaliser_telephone(v: str) -> str:
     return re.sub(r"[\s\-.()]", "", v)
 
 
+def verifier_mot_de_passe(v: str) -> str:
+    """Règles communes à tous les mots de passe (inscription, changement, oubli)."""
+    if len(v) < 8:
+        raise ValueError("Le mot de passe doit faire au moins 8 caractères")
+    if len(v.encode("utf-8")) > 72:
+        raise ValueError("Mot de passe trop long (72 octets maximum)")
+    if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+        raise ValueError("Le mot de passe doit contenir au moins une lettre et un chiffre")
+    return v
+
+
+def verifier_telephone(v):
+    """Nettoie le numéro ('+216 20 123 456' -> '+21620123456') et vérifie son format."""
+    if isinstance(v, str):
+        v = normaliser_telephone(v.strip())
+        if not v:
+            return None
+        if not re.fullmatch(r"\+?\d{8,15}", v):
+            raise ValueError("Numéro de téléphone invalide")
+    return v
+
+
 class UserCreate(BaseModel):
     nom: str = Field(min_length=2, max_length=100)
     email: EmailStr | None = None
@@ -54,11 +76,7 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def password_rules(cls, v: str):
-        if len(v.encode("utf-8")) > 72:
-            raise ValueError("Mot de passe trop long (72 octets maximum)")
-        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
-            raise ValueError("Le mot de passe doit contenir au moins une lettre et un chiffre")
-        return v
+        return verifier_mot_de_passe(v)
 
     @model_validator(mode="after")
     def check_contact_and_role(self):
@@ -67,6 +85,52 @@ class UserCreate(BaseModel):
         if self.role not in ROLES_INSCRIPTION:
             raise ValueError("Ce rôle n'est pas disponible à l'inscription")
         return self
+
+
+class ProfilUpdate(BaseModel):
+    """PATCH /auth/me : seuls les champs envoyés sont modifiés."""
+
+    nom: str | None = Field(default=None, min_length=2, max_length=100)
+    telephone: str | None = Field(default=None, max_length=25)
+    langue: Langue | None = None
+
+    @field_validator("nom")
+    @classmethod
+    def clean_nom(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("telephone", mode="before")
+    @classmethod
+    def clean_phone(cls, v):
+        return verifier_telephone(v)
+
+
+class ChangementMotDePasse(BaseModel):
+    ancien_mot_de_passe: str
+    nouveau_mot_de_passe: str
+
+    @field_validator("nouveau_mot_de_passe")
+    @classmethod
+    def regles(cls, v: str):
+        return verifier_mot_de_passe(v)
+
+
+class MotDePasseOublie(BaseModel):
+    email: EmailStr
+
+
+class ReinitialisationMotDePasse(BaseModel):
+    token: str
+    nouveau_mot_de_passe: str
+
+    @field_validator("nouveau_mot_de_passe")
+    @classmethod
+    def regles(cls, v: str):
+        return verifier_mot_de_passe(v)
+
+
+class MessageInfo(BaseModel):
+    message: str
 
 
 class LoginJSON(BaseModel):
@@ -205,3 +269,42 @@ class ParcelleOut(BaseModel):
     longitude: float | None = None
     date_plantation: date | None = None
     created_at: datetime
+
+# =====================================================================
+#  Statistiques administrateur  (GET /admin/stats)
+# =====================================================================
+class StatsComptes(BaseModel):
+    total: int
+    par_statut: dict[str, int]
+    par_role: dict[str, int]
+
+
+class StatsParcelles(BaseModel):
+    total: int
+    par_culture: dict[str, int]
+
+
+class StatsQuestions(BaseModel):
+    total: int
+    par_langue: dict[str, int]
+    reponses_assistant: int
+
+
+class StatsPhotos(BaseModel):
+    total: int
+    a_reprendre: int
+    taux_qualite_ok: float | None = None   # en %, None s'il n'y a aucune photo
+
+
+class StatsSatisfaction(BaseModel):
+    nb_avis: int
+    taux_utile: float | None = None        # en %, None s'il n'y a aucun avis
+
+
+class StatsAdmin(BaseModel):
+    comptes: StatsComptes
+    parcelles: StatsParcelles
+    conversations: int
+    questions: StatsQuestions
+    photos: StatsPhotos
+    satisfaction: StatsSatisfaction

@@ -1,12 +1,17 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services.rag.retriever import retrieve_context
 from app.services.rag.indexer import index_pdf, index_all_pdfs, DOCUMENTS_DIR
 from app.services.rag.vector_store import get_collection_stats
+from app.security import get_current_user, require_roles
+
+# Indexer des documents = réservé à l'admin et à l'expert ; chercher = utilisateur connecté
+gestion_documents = [Depends(require_roles("admin", "expert"))]
+connecte = [Depends(get_current_user)]
 
 
 # =====================================================
@@ -53,7 +58,7 @@ class IndexRequest(BaseModel):
 # 4. RECHERCHE DOCUMENTAIRE
 # =====================================================
 
-@router.post("/search")
+@router.post("/search", dependencies=connecte)
 def search(request: SearchRequest):
     """
     Recherche les passages pertinents
@@ -91,7 +96,7 @@ def search(request: SearchRequest):
 # 5. INDEXATION D'UN PDF
 # =====================================================
 
-@router.post("/index")
+@router.post("/index", dependencies=gestion_documents)
 def index_single_pdf(request: IndexRequest):
     """
     Indexe un PDF présent dans documents/agriculture.
@@ -140,7 +145,7 @@ def index_single_pdf(request: IndexRequest):
 # 6. INDEXATION DE TOUS LES PDF
 # =====================================================
 
-@router.post("/index-all")
+@router.post("/index-all", dependencies=gestion_documents)
 def index_all_documents():
     """
     Indexe tous les PDF du dossier agriculture.
@@ -168,7 +173,7 @@ def index_all_documents():
 # 7. STATISTIQUES DE LA BASE VECTORIELLE
 # =====================================================
 
-@router.get("/stats")
+@router.get("/stats", dependencies=gestion_documents)
 def get_rag_stats():
     """
     Affiche les statistiques de ChromaDB.

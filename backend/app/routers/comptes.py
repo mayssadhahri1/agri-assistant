@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
+from ..schemas import verifier_mot_de_passe
+from ..security import hash_password, lire_reset_token
 from ..services.emails import EMAILS_DEV_DIR, lire_token_decision, mode_test, notifier_client_decision
 from .admin import appliquer_decision
 
@@ -108,6 +110,55 @@ def appliquer_depuis_email(taches: BackgroundTasks, token: str = Form(...), db: 
                else "La personne ne pourra pas se connecter.")
     return _page("Compte validé ✅" if user.statut == "valide" else "Compte refusé",
                  _fiche(user) + f"<p>{message} Elle a été prévenue par email.</p>")
+
+
+# ---------------------------------------------------------------- mot de passe oublié
+_CHAMP = ("width:100%;box-sizing:border-box;padding:10px 12px;margin:4px 0 14px;border:1px solid #cfd8c8;"
+          "border-radius:8px;font-size:15px")
+
+
+def _formulaire_mdp(token: str, erreur: str = "") -> str:
+    msg = f'<p style="color:#c0392b">{html.escape(erreur)}</p>' if erreur else ""
+    return (
+        msg + '<form method="post" action="/comptes/mot-de-passe">'
+        f'<input type="hidden" name="token" value="{html.escape(token)}">'
+        f'<label>Nouveau mot de passe</label><input type="password" name="nouveau" required style="{_CHAMP}">'
+        f'<label>Confirmer le mot de passe</label><input type="password" name="confirmation" required style="{_CHAMP}">'
+        '<p style="color:#6b7768;font-size:13px;margin:0 0 16px">8 caractères minimum, avec au moins une lettre et un chiffre.</p>'
+        '<button type="submit" style="padding:12px 26px;border:0;border-radius:8px;background:#2f6b2f;'
+        'color:#fff;font-weight:600;font-size:15px;cursor:pointer">Enregistrer</button></form>'
+    )
+
+
+@router.get("/comptes/mot-de-passe", response_class=HTMLResponse)
+def page_nouveau_mot_de_passe(token: str = Query(...), db: Session = Depends(get_db)):
+    """Page ouverte depuis l'email « mot de passe oublié »."""
+    try:
+        user = lire_reset_token(token, db)
+    except HTTPException as e:
+        return _erreur(e)
+    return _page("Nouveau mot de passe",
+                 f"<p>Bonjour {html.escape(user.nom)}, choisissez votre nouveau mot de passe.</p>"
+                 + _formulaire_mdp(token))
+
+
+@router.post("/comptes/mot-de-passe", response_class=HTMLResponse)
+def enregistrer_nouveau_mot_de_passe(token: str = Form(...), nouveau: str = Form(...),
+                                     confirmation: str = Form(...), db: Session = Depends(get_db)):
+    try:
+        user = lire_reset_token(token, db)
+    except HTTPException as e:
+        return _erreur(e)
+    if nouveau != confirmation:
+        return _page("Nouveau mot de passe", _formulaire_mdp(token, "Les deux mots de passe sont différents."), 400)
+    try:
+        verifier_mot_de_passe(nouveau)
+    except ValueError as e:
+        return _page("Nouveau mot de passe", _formulaire_mdp(token, str(e)), 400)
+    user.password_hash = hash_password(nouveau)
+    db.commit()
+    return _page("Mot de passe modifié ✅",
+                 "<p>Votre mot de passe a été changé. Vous pouvez vous connecter dans l'application.</p>")
 
 
 # ---------------------------------------------------------------- boîte de test
