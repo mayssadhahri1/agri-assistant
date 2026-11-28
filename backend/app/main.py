@@ -3,9 +3,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app.services.rag.rag_routes import router as rag_router
 from .database import get_db
-from .routers import auth, conversations, parcelles
+from .routers import admin, auth, comptes, conversations, parcelles
 from .services.photos import UPLOAD_DIR
 
 app = FastAPI(
@@ -13,7 +12,6 @@ app = FastAPI(
     description="API backend : comptes, parcelles, questions/réponses, base de connaissances.",
     version="0.1.0",
 )
-app.include_router(rag_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # à restreindre en production
@@ -22,8 +20,18 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(admin.router)      # validation des comptes (rôle admin)
+app.include_router(comptes.router)    # boutons Accepter / Refuser reçus par email
 app.include_router(parcelles.router)
 app.include_router(conversations.router)
+
+# RAG : chargé seulement si chromadb / sentence-transformers sont installés,
+# pour que le reste de l'API démarre même sans ces bibliothèques lourdes.
+try:
+    from app.services.rag.rag_routes import router as rag_router
+    app.include_router(rag_router)
+except ImportError as e:
+    print(f"[RAG désactivé] dépendance manquante : {e.name}. Lancez : pip install -r requirements.txt")
 
 # Photos accessibles via /uploads/photos/<nom>.jpg
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

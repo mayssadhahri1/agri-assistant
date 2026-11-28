@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS users (
   role          ENUM('agriculteur','expert','admin') NOT NULL DEFAULT 'agriculteur',
   langue        ENUM('fr','ar') NOT NULL DEFAULT 'fr',
   actif         BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Validation du compte par l'administrateur avant la première connexion
+  statut        ENUM('en_attente','valide','refuse') NOT NULL DEFAULT 'en_attente',
+  valide_par    INT NULL,
+  valide_le     DATETIME NULL,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT chk_contact CHECK (email IS NOT NULL OR telephone IS NOT NULL)
 ) ENGINE=InnoDB;

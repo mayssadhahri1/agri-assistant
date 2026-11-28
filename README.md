@@ -431,3 +431,41 @@ Documentation Swagger :
 **Projet : Assistant agricole intelligent (VLM + RAG)**
 
 Objectif : développer un assistant intelligent permettant aux agriculteurs d'obtenir des conseils fiables à partir de photos, de questions et de documents agricoles.
+
+## Étape 4 — Validation des comptes par l'administrateur
+Un compte créé par `/auth/register` est **en attente** : la personne ne peut pas se connecter
+tant qu'un administrateur ne l'a pas accepté.
+
+### Ce qui change
+- Nouvelle colonne `statut` dans `users` : `en_attente`, `valide` ou `refuse` (+ `valide_par`, `valide_le`).
+- Login refusé (403) si le compte est en attente ou refusé. Un token déjà donné ne marche plus après un refus.
+- Nouvelle section Swagger **Administration** (rôle `admin` seulement) :
+
+| Méthode | URL | Description |
+|---|---|---|
+| GET | /admin/users?statut=en_attente | Lister les comptes (filtre par statut) |
+| GET | /admin/users/{id} | Voir un compte |
+| PATCH | /admin/users/{id}/valider | Accepter un compte |
+| PATCH | /admin/users/{id}/refuser | Refuser un compte |
+
+### Validation par email (boutons Accepter / Refuser)
+1. À chaque inscription, chaque admin reçoit un email avec la fiche du compte et deux boutons.
+2. Le bouton ouvre une page de confirmation (`/comptes/decision`) : rien ne change avant le clic sur « Confirmer ».
+3. Après la décision, la personne reçoit un email « compte validé » ou « inscription refusée ».
+
+Le lien est signé (JWT) et valable 72 h ; un lien déjà utilisé ou falsifié ne change rien.
+
+**Emails** : si `SMTP_HOST` est vide dans `.env`, les emails ne partent pas : ils sont gardés dans
+`backend/emails_dev/` et visibles sur http://127.0.0.1:8000/dev/emails. Pour un vrai envoi, remplir
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (voir `.env.example`).
+
+### Mise à jour d'une base existante + compte admin
+```powershell
+cd backend
+.\.venv\Scripts\python creer_admin.py ton.email@exemple.com MotDePasse1
+```
+Le script ajoute les nouvelles colonnes (les anciens comptes restent « valide ») et crée l'admin.
+
+### Autres corrections
+- `database/schema.sql` : colonne `statut` ajoutée.
+- Tests automatiques : `python test_auth.py` (31 tests) et `python test_api.py`.

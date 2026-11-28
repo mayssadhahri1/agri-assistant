@@ -7,6 +7,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+# Statuts possibles d'un compte
+STATUTS_COMPTE = ("en_attente", "valide", "refuse")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -18,6 +22,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(Enum("agriculteur", "expert", "admin"), default="agriculteur")
     langue: Mapped[str] = mapped_column(Enum("fr", "ar"), default="fr")
     actif: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Un compte créé par /auth/register attend la validation d'un administrateur
+    statut: Mapped[str] = mapped_column(Enum(*STATUTS_COMPTE), default="en_attente")
+    valide_par: Mapped[int | None] = mapped_column(Integer)      # id de l'admin qui a décidé
+    valide_le: Mapped[datetime | None] = mapped_column(DateTime)  # date de la décision
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
